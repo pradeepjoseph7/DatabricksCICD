@@ -1,0 +1,32 @@
+{
+    "default": {
+        "jobs": [
+            {
+                "name": "repos-ci-demo-job",
+                "new_cluster": {
+                    "spark_version": "7.3.x-cpu-ml-scala2.12",
+                    "node_type_id": "Standard_DS3_v2",
+                    "num_workers": 1
+                },
+                "libraries": [],
+                "always_running":true,
+                "max_concurrent_runs": 1,
+                "max_retries": 0,
+                "notebook_task": {
+                    "notebook_path": "/Repos/Production/databricks-repos-ci-demo/notebooks/src/prepare-data"
+                }
+            },
+            {
+                "name": "streaming-demo-job",
+                "existing_cluster_id":"1102-144444-ogssz5zu",
+                "libraries": [],
+                "always_running":true,
+                "max_concurrent_runs": 1,
+                "max_retries": 0,
+                "notebook_task": {
+                    "notebook_path": "/Repos/Production/databricks-repos-ci-demo/notebooks/src/prepare-data"
+                }
+            }
+        ]
+    }
+}

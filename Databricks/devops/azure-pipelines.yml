@@ -1,0 +1,150 @@
+variables:
+- group: Databricks-environment
+
+trigger:
+  batch: true
+  branches:
+    include:
+    - '*'
+  paths:
+    include:
+    - Databricks
+    exclude:
+    - ADF
+
+  tags:
+    include:
+      - v*.*
+      - prod
+
+stages:
+- stage: onPush
+  jobs:
+  - job: onPushJob
+    pool:
+      vmImage: 'ubuntu-18.04'
+
+    steps:
+    - script: env | sort
+      displayName: 'Environment / Context'
+
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.7'
+      inputs:
+        versionSpec: 3.7
+
+    - checkout: self
+      persistCredentials: true
+      clean: true
+      displayName: 'Checkout & Build.Reason: $(Build.Reason) & Build.SourceBranchName: $(Build.SourceBranchName)'
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install -r dev-requirements.txt
+      workingDirectory: Databricks/
+      displayName: 'Install dependencies'
+
+    - task: configuredatabricks@0
+      displayName: 'Configure Databricks CLI'
+      inputs:
+        url: $(DATABRICKS_HOST)
+        token: $(DATABRICKS_TOKEN)
+
+    - task: deploynotebooks@0
+      displayName: 'Publish notebooks to test workspace'
+      inputs:
+        notebooksFolderPath: '$(System.DefaultWorkingDirectory)/Databricks/notebooks'
+        workspaceFolder: '/Shared/cicd_poc_demo/nutter'
+    - script: |
+        nutter run /Shared/nutter/ --cluster-id 1102-144444-ogssz5zu --recursive --junit_report --timeout 500
+      workingDirectory: Databricks/
+      env:
+        DATABRICKS_HOST: $(DATABRICKS_HOST)
+        DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+      displayName: 'Run Unit Tests'
+
+    - script: |
+        dbx deploy --no-rebuild --deployment-file=conf/test-conf.json --no-package --files-only
+      workingDirectory: Databricks/
+      env:
+        DATABRICKS_HOST: $(DATABRICKS_HOST)
+        DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+      displayName: 'Deploy integration test'
+
+    - script: |
+        dbx launch --job=nutter-testing-suite --as-run-submit --trace
+      workingDirectory: Databricks/
+      env:
+        DATABRICKS_HOST: $(DATABRICKS_HOST)
+        DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+      displayName: 'Launch integration on test'
+
+    - task: PublishTestResults@2
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/test-*.xml' 
+        failTaskOnFailedTests: true
+    
+
+- stage: onRelease
+
+  jobs:
+  - job: onReleaseJob
+    pool:
+      vmImage: 'ubuntu-18.04'
+
+    steps:
+      - script: env | sort
+        displayName: 'Environment / Context'
+
+      - task: UsePythonVersion@0
+        displayName: 'Use Python 3.7'
+        inputs:
+          versionSpec: 3.7
+
+      - checkout: self
+        persistCredentials: true
+        clean: true
+        displayName: 'Checkout & Build.Reason: $(Build.Reason) & Build.SourceBranchName: $(Build.SourceBranchName)'
+
+      - script: |
+          python -m pip install --upgrade pip
+          pip install -r dev-requirements.txt
+        workingDirectory: Databricks/
+        displayName: 'Install dependencies'
+
+      - task: configuredatabricks@0
+        displayName: 'Configure Databricks CLI'
+        inputs:
+          url: $(DATABRICKS_HOST)
+          token: $(DATABRICKS_TOKEN)
+
+      - task: deploynotebooks@0
+        displayName: 'Publish notebooks to test workspace'
+        inputs:
+          notebooksFolderPath: '$(System.DefaultWorkingDirectory)/Databricks/notebooks'
+          workspaceFolder: '/Shared/cicd_poc_demo/nutter'
+
+      - script: |
+          dbx deploy --no-rebuild --deployment-file=conf/streaming-job-conf.json
+        workingDirectory: Databricks/
+        env:
+          DATABRICKS_HOST: $(DATABRICKS_HOST)
+          DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+        displayName: 'Deploy the job'
+
+      - script: |
+          dbx launch --job=nutter-testing-suite
+        workingDirectory: Databricks/
+        env:
+          DATABRICKS_HOST: $(DATABRICKS_HOST)
+          DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+        displayName: 'Launch the job'
+
+      - task: PublishTestResults@2
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: '**/test-*.xml' 
+          failTaskOnFailedTests: true

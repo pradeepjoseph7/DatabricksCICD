@@ -1,0 +1,4 @@
+databricks-cli>=0.15.0
+dbx
+pyspark==3.0.0
+nutter
